@@ -1,0 +1,23 @@
+name: Documentation
+description: Something is missing, wrong or unclear in the README, /docs (Scalar) or the guides.
+title: "[Docs]: "
+labels: ["documentation"]
+body:
+  - type: input
+    id: location
+    attributes:
+      label: Where?
+      description: File, section or endpoint in /docs.
+      placeholder: "README.md > Configuration, or POST /v1/systemone/batch in /docs"
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: What is wrong or missing?
+    validations:
+      required: true
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: Suggested wording or content

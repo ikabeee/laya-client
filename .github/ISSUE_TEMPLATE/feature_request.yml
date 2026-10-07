@@ -1,0 +1,62 @@
+name: Feature request
+description: Suggest a new endpoint, option or improvement.
+title: "[Feature]: "
+labels: ["enhancement", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the suggestion! laya-client is a self-hosted, Jev-compatible REST service for Laya.
+        Features must keep running on the user's own infrastructure, without a hosted backend.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What are you trying to do, and what gets in the way today?
+      placeholder: "When I deploy behind ..., I can't ..."
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: What should change? Include example requests/responses for API changes.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      multiple: true
+      options:
+        - API / endpoints
+        - Jev compatibility
+        - Presets
+        - Engine (Laya / mock)
+        - Configuration
+        - Deployment (Docker, Compose, systemd)
+        - Documentation (Scalar / OpenAPI / README)
+        - Other
+    validations:
+      required: true
+  - type: dropdown
+    id: contract
+    attributes:
+      label: Does this change the HTTP contract?
+      options:
+        - "No"
+        - Yes, backwards compatible (new field or endpoint)
+        - Yes, breaking
+        - Not sure
+    validations:
+      required: true
+  - type: checkboxes
+    id: contribute
+    attributes:
+      label: Contribution
+      options:
+        - label: I'd like to implement this myself (see CONTRIBUTING.md).

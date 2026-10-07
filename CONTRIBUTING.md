@@ -1,5 +1,11 @@
 # Contributing
 
+## Issues
+
+Open an issue with one of the [templates](.github/ISSUE_TEMPLATE): **bug report**, **feature request**,
+**documentation** or **question**. Report security vulnerabilities privately as described in the
+[security policy](.github/SECURITY.md), never in a public issue.
+
 ## Git flow
 
 | Branch | Purpose | Branches from | Merges into |
