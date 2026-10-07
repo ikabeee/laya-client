@@ -20,9 +20,11 @@ jobs:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
         with:
+          # Also creates and activates the virtual environment at .venv.
           python-version: ${{ matrix.python-version }}
+          cache-dependency-glob: pyproject.toml
       - name: Install
-        run: uv venv .venv && uv pip install --python .venv -e ".[dev]"
+        run: uv pip install --python .venv -e ".[dev]"
       - name: Lint
         run: |
           .venv/bin/ruff check src tests
