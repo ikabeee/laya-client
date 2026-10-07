@@ -1,7 +1,7 @@
 """Composition root: the one place that knows every concrete class and wires them together.
 
-Use cases receive their ports through their constructors. Swapping the engine (real Laya, the mock,
-a test double) or the preset store is a change here and nowhere else.
+Use cases receive their ports through their constructors. Swapping the engine (Laya, or a test
+double in the unit tests) or the preset store is a change here and nowhere else.
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ from .application.use_cases import (
 from .domain.ports import DecisionEngine, ModelCatalog, PresetRepository
 from .infrastructure.catalog import StaticModelCatalog
 from .infrastructure.config import Settings
-from .infrastructure.engines import LayaEngineConfig, LayaRouterEngine, MockDecisionEngine
+from .infrastructure.engines import LayaEngineConfig, LayaRouterEngine
 from .infrastructure.presets import InMemoryPresetRepository
 
 
@@ -40,12 +40,10 @@ class Container:
 
 
 def build_engine(settings: Settings) -> DecisionEngine:
-    if settings.engine == "mock":
-        return MockDecisionEngine()
     return LayaRouterEngine(
         LayaEngineConfig(
             device=settings.device,
-            preload=settings.preload,
+            require_gpu=settings.require_gpu,
             models=tuple(settings.preload_models),
             threads=settings.threads,
             auto_task=settings.auto_task,

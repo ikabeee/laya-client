@@ -36,7 +36,7 @@ body:
         - API / endpoints
         - Jev compatibility
         - Presets
-        - Engine (Laya / mock)
+        - Engine / model runtime
         - Configuration
         - Deployment (Docker, Compose, systemd)
         - Documentation (Scalar / OpenAPI / README)

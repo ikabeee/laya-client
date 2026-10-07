@@ -29,8 +29,8 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# The real inference engine. Pulls torch + transformers, so it is kept out of the base install:
-# the API, its docs and the test suite run on the mock engine without it.
+# The inference engine. Required to run the service; install torch for your hardware first (`make setup`
+# does both). Kept as an extra only so `make check` can lint and unit-test without torch.
 engine = ["laya>=0.3.28"]
 dev = [
     "pytest>=8.0.0",

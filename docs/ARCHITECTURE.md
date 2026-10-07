@@ -13,7 +13,7 @@ FastAPI, torch or Laya exist.
             │   │   │  domain  (entities, policies, ports)     │   │   │
             │   │   └──────────────────────────────────────────┘   │   │
             │   └──────────────────────────────────────────────────┘   │
-            │  infrastructure  (Laya Router, mock, settings, presets)  │
+            │  infrastructure  (Laya Router, runtime checks, presets)  │
             └──────────────────────────────────────────────────────────┘
                      container.py  = composition root (wires it all)
 ```
@@ -44,10 +44,14 @@ constructor (dependency injection) and knows nothing about HTTP:
 
 ### `infrastructure/` — Frameworks & Drivers
 
+- `engines/runtime.py` — `check_runtime`: resolves `LAYA_DEVICE` and proves the runtime can use it
+  (laya and torch installed, a CUDA kernel actually runs on the GPU, no silent CPU fallback when an
+  NVIDIA GPU is present).
 - `engines/laya_engine.py` — `LayaRouterEngine`: adapter from the `DecisionEngine` port to `laya.Router`.
-  Imports `laya`/torch lazily, serializes forward passes with a lock (one at a time is what a CPU/GPU
-  wants), turns Laya's `ValueError` into `InvalidRequestError` and hides internal failures.
-- `engines/mock_engine.py` — `MockDecisionEngine`: deterministic answers with Laya's exact shape.
+  `start()` runs the runtime check, loads the checkpoints, verifies their device and runs a test
+  prediction, raising `EngineUnavailableError` on any failure. Inference serializes forward passes with a
+  lock (one at a time is what a CPU/GPU wants), turns Laya's `ValueError` into `InvalidRequestError` and
+  hides internal failures.
 - `catalog.py` — model-name resolution identical to `laya-serve` (a Jev model id auto-routes).
 - `presets.py` — Laya's five presets, as data.
 - `config/settings.py` — `pydantic-settings`, `LAYA_` prefix.
@@ -62,6 +66,21 @@ constructor (dependency injection) and knows nothing about HTTP:
 - `middleware.py` — request body size limit and `X-Request-ID`.
 - `docs.py` — Scalar reference at `/docs` (telemetry disabled).
 
+## Start-up
+
+```
+laya-client  →  uvicorn  →  app lifespan
+  → DecisionEngine.start()            (LayaRouterEngine)
+       → check_runtime(LAYA_DEVICE)   laya + torch installed, GPU kernel probe
+       → Router(...).preload(models)  download + load the checkpoints
+       → device check                 each checkpoint on the requested device
+       → test prediction              one per checkpoint
+  → any failure: CRITICAL log line, uvicorn exits with status 3 — the server never listens
+```
+
+There is no mock engine and no lazy loading: a running server is a server that can answer with the real
+model. `laya-client doctor [--load]` runs the same steps without starting the server.
+
 ## Request flow
 
 ```
@@ -72,15 +91,15 @@ POST /v1/systemone
   → PredictDecision.execute      (thread pool: never blocks the event loop)
        → policies.validate_decision_request
        → ModelCatalog.resolve
-       → DecisionEngine.predict  (LayaRouterEngine | MockDecisionEngine)
+       → DecisionEngine.predict  (LayaRouterEngine)
   → presenters.decision_payload  (strict when LAYA_JEV_STRICT)
   → JSONResponse + X-Inference-Time-Ms / Server-Timing
 ```
 
 ## Extending
 
-- **Another engine** (e.g. ONNX, or a remote Laya): implement `DecisionEngine` in
-  `infrastructure/engines/` and select it in `container.build_engine`. Nothing else changes.
+- **Another engine** (e.g. ONNX, or a remote Laya): implement `DecisionEngine` (including a strict
+  `start()`) in `infrastructure/engines/` and select it in `container.build_engine`. Nothing else changes.
 - **Custom presets** (e.g. from a database): implement `PresetRepository` and swap it in `container.py`.
 - **Another interface** (gRPC, CLI, a queue consumer): add `interfaces/<name>/` calling the same use cases.
 
@@ -91,6 +110,8 @@ POST /v1/systemone
 | `tests/unit/test_architecture.py` | The dependency rule |
 | `tests/unit/test_policies.py` | Domain rules |
 | `tests/unit/test_use_cases.py` | Use cases against a test double (`RecordingEngine`) |
-| `tests/unit/test_engines.py` | The mock, and the Laya adapter against a fake `Router` |
+| `tests/unit/test_runtime.py` | Device resolution and GPU checks against stand-ins for `torch` |
+| `tests/unit/test_engines.py` | The Laya adapter's start-up and inference against a fake `Router` |
 | `tests/unit/test_presenters.py` | Full payload vs. the strict Jev contract |
-| `tests/integration/test_api.py` | End-to-end HTTP: contract, auth, limits, 503, OpenAPI, Scalar |
+| `tests/integration/test_api.py` | The whole HTTP app with a test-double engine (`tests/fakes.py`): contract, auth, limits, 503, start-up failure, OpenAPI, Scalar |
+| CI `e2e` job | The production Docker image with the real model: download, load, API calls, and a start-up failure when a missing GPU is requested |
