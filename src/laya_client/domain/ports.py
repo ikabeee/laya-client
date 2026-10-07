@@ -1,7 +1,7 @@
 """Ports: the interfaces the application layer depends on and the infrastructure implements.
 
 The use cases talk to a ``DecisionEngine``, a ``ModelCatalog`` and a ``PresetRepository`` without
-knowing whether the engine is Laya on a GPU, Laya on a CPU or a deterministic mock in a test.
+knowing whether the engine is Laya on a GPU, Laya on a CPU or a test double in the unit tests.
 """
 
 from __future__ import annotations
@@ -34,8 +34,12 @@ class DecisionEngine(ABC):
     def status(self) -> EngineStatus:
         """Report readiness without loading anything."""
 
-    def warmup(self) -> None:  # noqa: B027 -- optional hook, a no-op is a valid implementation
-        """Load whatever the engine needs before the first request. Optional."""
+    def start(self) -> None:  # noqa: B027 -- optional hook, a no-op is a valid implementation
+        """Prepare everything the engine needs before the first request.
+
+        Called once at start-up, before the server accepts traffic. Raise ``EngineUnavailableError``
+        when the engine cannot serve: the service refuses to start rather than answer with errors.
+        """
 
     def shutdown(self) -> None:  # noqa: B027 -- optional hook, a no-op is a valid implementation
         """Release resources. Optional."""

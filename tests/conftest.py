@@ -7,6 +7,7 @@ from laya_client.container import build_container
 from laya_client.domain.entities import Question, QuestionType
 from laya_client.infrastructure.config import Settings
 from laya_client.interfaces.http import create_app
+from tests.fakes import FakeDecisionEngine
 
 QUESTIONS = {
     "department": {
@@ -21,7 +22,7 @@ QUESTIONS = {
 
 def make_settings(**overrides) -> Settings:
     # _env_file=None: tests must not pick up a developer's local .env.
-    return Settings(_env_file=None, engine="mock", **overrides)
+    return Settings(_env_file=None, **overrides)
 
 
 @pytest.fixture
@@ -31,7 +32,7 @@ def settings() -> Settings:
 
 @pytest.fixture
 def client(settings: Settings):
-    with TestClient(create_app(settings)) as test_client:
+    with TestClient(create_app(settings, build_container(settings, engine=FakeDecisionEngine()))) as test_client:
         yield test_client
 
 
@@ -41,7 +42,7 @@ def make_client():
 
     def _make(engine=None, **overrides) -> TestClient:
         settings = make_settings(**overrides)
-        app = create_app(settings, build_container(settings, engine=engine))
+        app = create_app(settings, build_container(settings, engine=engine or FakeDecisionEngine()))
         test_client = TestClient(app)
         test_client.__enter__()
         clients.append(test_client)

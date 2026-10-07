@@ -1,14 +1,21 @@
-"""End-to-end HTTP tests against the mock engine: the wire contract, auth, limits and docs."""
+"""HTTP tests through the whole app with a test-double engine: the wire contract, auth, limits and docs.
+
+The real model is covered by the e2e job in CI, which builds the Docker image and calls the API.
+"""
 
 from __future__ import annotations
 
 import threading
 
+import pytest
 from fastapi.testclient import TestClient
 
+from laya_client.container import build_container
 from laya_client.domain.entities import Decision, Usage
-from laya_client.infrastructure.engines import MockDecisionEngine
-from tests.conftest import QUESTIONS
+from laya_client.domain.errors import EngineUnavailableError
+from laya_client.interfaces.http import create_app
+from tests.conftest import QUESTIONS, make_settings
+from tests.fakes import FakeDecisionEngine
 
 BODY = {"state": {"body": "We were billed twice for March. Refund it or we cancel."}, "questions": QUESTIONS}
 
@@ -106,7 +113,7 @@ def test_auth_required_when_key_set(make_client):
         assert ok.status_code == 200
     # Probes stay open, but only authenticated callers get engine details.
     assert client.get("/health").json() == {"status": "ok"}
-    assert client.get("/health", headers={"Authorization": "Bearer k1"}).json()["engine"] == "mock"
+    assert client.get("/health", headers={"Authorization": "Bearer k1"}).json()["engine"] == "fake"
     assert client.get("/v1/models").status_code == 401
 
 
@@ -120,7 +127,7 @@ def test_admission_limit_returns_503(make_client):
     gate = threading.Event()
     entered = threading.Event()
 
-    class SlowEngine(MockDecisionEngine):
+    class SlowEngine(FakeDecisionEngine):
         def predict(self, request):
             entered.set()
             gate.wait(5)
@@ -199,3 +206,27 @@ def test_docs_can_be_disabled(make_client):
     client = make_client(docs_enabled=False)
     assert client.get("/docs").status_code == 404
     assert client.get("/openapi.json").status_code == 404
+
+
+def test_server_refuses_to_start_when_the_engine_cannot():
+    class BrokenEngine(FakeDecisionEngine):
+        def start(self):
+            raise EngineUnavailableError("torch 2.5.1 (CUDA 12.4 build) cannot run on NVIDIA GeForce RTX 5080 (sm_120)")
+
+    settings = make_settings()
+    app = create_app(settings, build_container(settings, engine=BrokenEngine()))
+    with pytest.raises(EngineUnavailableError, match="sm_120"), TestClient(app):
+        pass
+
+
+def test_engine_starts_before_the_first_request():
+    started = []
+
+    class RecordingEngine(FakeDecisionEngine):
+        def start(self):
+            started.append(True)
+
+    settings = make_settings()
+    with TestClient(create_app(settings, build_container(settings, engine=RecordingEngine()))) as client:
+        assert started == [True]
+        assert client.get("/ready").status_code == 200

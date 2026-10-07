@@ -1,10 +1,12 @@
-"""A deterministic stand-in for Laya, for development, CI and contract tests.
+"""Test double for the ``DecisionEngine`` port.
 
-It answers every request instantly and without a model: probabilities are derived from a hash of
-the state and the question, so the same request always gets the same answer. The answers have the
-exact shape Laya returns, which makes the mock useful for building and testing clients, and useless
-for real decisions. ``/health`` and every routing report say ``mock`` so nobody mistakes one for
-the other.
+The service itself has no mock engine: it always runs the real Laya model and refuses to start when it
+cannot. These unit and HTTP tests replace the engine through the composition root
+(``build_container(settings, engine=FakeDecisionEngine())``) so they run in milliseconds and offline.
+The real model is exercised end to end by the ``e2e`` job in ``.github/workflows/ci.yml``.
+
+Answers are derived from a hash of the state and the question, so the same request always gets the
+same answer, in exactly the shape Laya returns.
 """
 
 from __future__ import annotations
@@ -17,7 +19,7 @@ from collections.abc import Mapping
 from dataclasses import replace
 from typing import Any
 
-from ...domain.entities import (
+from laya_client.domain.entities import (
     Answer,
     BatchDecision,
     BatchDecisionRequest,
@@ -30,7 +32,7 @@ from ...domain.entities import (
     QuestionType,
     Usage,
 )
-from ...domain.ports import DecisionEngine
+from laya_client.domain.ports import DecisionEngine
 
 _DEFAULT_MODEL = "english"
 
@@ -70,16 +72,16 @@ def _threshold_for(min_confidence: MinConfidence | None, question: Question) -> 
     return float(min_confidence)
 
 
-class MockDecisionEngine(DecisionEngine):
-    """Implements the ``DecisionEngine`` port without loading any model."""
+class FakeDecisionEngine(DecisionEngine):
+    """Implements the ``DecisionEngine`` port without loading any model. Tests only."""
 
     def status(self) -> EngineStatus:
         return EngineStatus(
-            engine="mock",
+            engine="fake",
             ready=True,
             loaded=(_DEFAULT_MODEL,),
             device="cpu",
-            details={"note": "deterministic mock answers; no model is loaded"},
+            details={"note": "test double; no model is loaded"},
         )
 
     def _answer(self, state_key: str, question: Question, min_confidence: MinConfidence | None) -> Answer:
@@ -134,13 +136,13 @@ class MockDecisionEngine(DecisionEngine):
         answers = {q.id: self._answer(state_key, q, request_controls.min_confidence) for q in questions}
         state_tokens = max(1, len(state_key.split()))
         return Decision(
-            model="mock/%s" % model,
+            model="fake/%s" % model,
             answers=answers,
             usage=Usage(input_tokens=state_tokens * len(questions), output_tokens=0),
             routing={
                 "model": model,
-                "repo": "mock",
-                "reason": "mock engine: deterministic answers, no model loaded",
+                "repo": "fake",
+                "reason": "test double: deterministic answers, no model loaded",
                 "detection": None,
                 "workflow": None,
             },

@@ -13,6 +13,7 @@ from fastapi.responses import RedirectResponse
 
 from ... import __version__
 from ...container import Container, build_container
+from ...domain.errors import LayaClientError
 from ...infrastructure.config import Settings, get_settings
 from .dependencies import Admission
 from .docs import DESCRIPTION, TAGS, mount_scalar
@@ -30,23 +31,16 @@ def create_app(settings: Settings | None = None, container: Container | None = N
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
-        # Load checkpoints in the background: the server answers /health (and serves its docs)
-        # while weights download, and /ready flips to 200 once the engine can answer.
-        warmup = None
-        if settings.preload:
-
-            async def _warm() -> None:
-                try:
-                    await asyncio.to_thread(container.engine.warmup)
-                except Exception:  # noqa: BLE001 -- reported through /ready and the next request
-                    _log.exception("engine warm-up failed; it will be retried on the next request")
-
-            warmup = asyncio.create_task(_warm())
+        # The engine starts before the server accepts a single request: it checks the runtime, loads
+        # the checkpoints and runs a test prediction. If any of that fails the server does not start.
+        try:
+            await asyncio.to_thread(container.engine.start)
+        except LayaClientError as error:
+            _log.critical("laya-client cannot start: %s", error.message)
+            raise
         try:
             yield
         finally:
-            if warmup is not None and not warmup.done():
-                warmup.cancel()
             await asyncio.to_thread(container.engine.shutdown)
 
     app = FastAPI(

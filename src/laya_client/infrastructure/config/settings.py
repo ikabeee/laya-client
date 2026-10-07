@@ -44,12 +44,16 @@ class Settings(BaseSettings):
     )
 
     # --- engine --------------------------------------------------------------------------------
-    engine: Literal["laya", "mock"] = Field(
-        "laya", description="`laya` runs the real model; `mock` answers deterministically without one."
+    engine: str = Field(
+        "laya", description="Kept only to reject the removed `mock` engine; the real model always runs."
     )
-    device: str | None = Field(None, description="Torch device (cpu, cuda, mps). Empty lets Laya choose.")
-    preload: bool = Field(True, description="Load checkpoints at startup instead of on the first request.")
-    models: str = Field("", description="Comma-separated checkpoints to preload; empty preloads all of them.")
+    device: str | None = Field(
+        None,
+        description="auto (default), cpu, cuda, cuda:<index> or mps. Auto refuses to fall back to the CPU "
+        "when an NVIDIA GPU is present but torch cannot use it.",
+    )
+    require_gpu: bool = Field(False, description="Refuse to start unless the model runs on a GPU.")
+    models: str = Field("", description="Comma-separated checkpoints to load at start-up; empty loads all.")
     threads: int | None = Field(None, ge=1, description="Cap torch intra-op threads for CPU inference.")
     auto_task: bool = Field(False, description="Auto-route typed-decisions workflows to their checkpoint.")
     default_model: str | None = Field(None, description="Checkpoint for states with no language evidence.")
@@ -67,6 +71,16 @@ class Settings(BaseSettings):
     max_total_options: int = Field(512, ge=2)
     max_token_budget: int = Field(8192, ge=1)
     max_batch_tokens: int = Field(131_072, ge=1, description="Tokens one batch forward pass may collate.")
+
+    @field_validator("engine")
+    @classmethod
+    def _only_real_engine(cls, value: str) -> str:
+        if value.strip().lower() != "laya":
+            raise ValueError(
+                "LAYA_ENGINE=%r is not supported: the mock engine was removed and laya-client always runs "
+                "the real Laya model. Remove LAYA_ENGINE from your environment." % value
+            )
+        return "laya"
 
     @field_validator("device", "default_model", mode="before")
     @classmethod

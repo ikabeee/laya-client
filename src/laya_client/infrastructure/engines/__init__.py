@@ -1,6 +1,6 @@
 """Decision engine adapters."""
 
 from .laya_engine import LayaEngineConfig, LayaRouterEngine
-from .mock_engine import MockDecisionEngine
+from .runtime import RuntimeInfo, check_runtime
 
-__all__ = ["LayaEngineConfig", "LayaRouterEngine", "MockDecisionEngine"]
+__all__ = ["LayaEngineConfig", "LayaRouterEngine", "RuntimeInfo", "check_runtime"]
