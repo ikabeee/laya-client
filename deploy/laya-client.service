@@ -1,0 +1,34 @@
+# systemd unit for running laya-client without Docker.
+#   sudo useradd --system --create-home --home-dir /opt/laya-client laya
+#   sudo -u laya python3 -m venv /opt/laya-client/venv
+#   sudo -u laya /opt/laya-client/venv/bin/pip install --index-url https://download.pytorch.org/whl/cpu torch
+#   sudo -u laya /opt/laya-client/venv/bin/pip install "laya-client[engine] @ git+https://github.com/ikabeee/laya-client"
+#   sudo cp deploy/laya-client.service /etc/systemd/system/ && sudo systemctl enable --now laya-client
+[Unit]
+Description=Laya Client - self-hosted System-1 decision API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=laya
+Group=laya
+WorkingDirectory=/opt/laya-client
+EnvironmentFile=-/opt/laya-client/.env
+Environment=HF_HOME=/opt/laya-client/models USE_TF=0 TOKENIZERS_PARALLELISM=false LAYA_HOST=127.0.0.1
+ExecStart=/opt/laya-client/venv/bin/laya-client
+Restart=on-failure
+RestartSec=5
+
+# Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/laya-client
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+
+[Install]
+WantedBy=multi-user.target

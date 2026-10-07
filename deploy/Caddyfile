@@ -1,0 +1,10 @@
+# Automatic HTTPS for the Laya Client API. Set LAYA_DOMAIN to a DNS name pointing at this VPS.
+{$LAYA_DOMAIN} {
+	encode zstd gzip
+	reverse_proxy laya-client:8000 {
+		header_up X-Request-ID {http.request.uuid}
+	}
+	request_body {
+		max_size 2MB
+	}
+}
