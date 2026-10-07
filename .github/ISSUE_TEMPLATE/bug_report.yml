@@ -1,0 +1,89 @@
+name: Bug report
+description: Something does not work as documented.
+title: "[Bug]: "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug. Please search [existing issues](https://github.com/ikabeee/laya-client/issues) first.
+        **Do not report security vulnerabilities here** — see the [security policy](https://github.com/ikabeee/laya-client/security/policy).
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: A clear description of the bug.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: The request you sent (redact secrets and private data) and how you ran the server.
+      placeholder: |
+        1. Start with `docker compose up -d` and LAYA_ENGINE=laya
+        2. curl -s localhost:8000/v1/systemone -H 'content-type: application/json' -d '{...}'
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual response / logs
+      description: HTTP status, response body and relevant server log lines. This is rendered as code.
+      render: shell
+  - type: dropdown
+    id: engine
+    attributes:
+      label: Engine
+      options:
+        - laya (CPU)
+        - laya (GPU / CUDA)
+        - laya (Apple MPS)
+        - mock
+    validations:
+      required: true
+  - type: dropdown
+    id: deployment
+    attributes:
+      label: How do you run laya-client?
+      options:
+        - Docker / Docker Compose
+        - systemd / bare metal
+        - Local development (make dev / make run)
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: laya-client version or commit
+      placeholder: "0.1.0 or a1b2c3d"
+    validations:
+      required: true
+  - type: input
+    id: laya-version
+    attributes:
+      label: laya package version
+      description: Output of `pip show laya` (leave empty for the mock engine).
+      placeholder: "0.3.28"
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, Python version, CPU/GPU, RAM, relevant LAYA_* settings (never paste LAYA_API_KEY).
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checklist
+      options:
+        - label: I searched existing issues and this is not a duplicate.
+          required: true
+        - label: I removed secrets and private data from everything above.
+          required: true

@@ -1,0 +1,16 @@
+name: Question
+description: Ask how to use, configure or deploy laya-client.
+title: "[Question]: "
+labels: ["question"]
+body:
+  - type: textarea
+    id: question
+    attributes:
+      label: Your question
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: What you tried, your setup, and links to the relevant docs.

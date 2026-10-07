@@ -1,0 +1,14 @@
+# NVIDIA GPU override (needs the NVIDIA Container Toolkit on the host):
+#   TORCH_INDEX_URL=https://download.pytorch.org/whl/cu124 \
+#     docker compose -f compose.yaml -f compose.gpu.yaml up -d --build
+services:
+  laya-client:
+    environment:
+      LAYA_DEVICE: cuda
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
