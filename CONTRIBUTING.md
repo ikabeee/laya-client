@@ -42,7 +42,9 @@ chore(deploy): add Caddy reverse proxy
 ## Before opening a PR
 
 ```bash
+make install    # lint + test tooling (no torch needed)
 make check      # ruff (lint + format) and pytest
+make doctor     # if your change touches the engine: load and test the real model (needs `make setup`)
 ```
 
 - Respect the dependency rule (see `docs/ARCHITECTURE.md`): `domain` imports nothing external,

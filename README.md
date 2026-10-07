@@ -10,7 +10,9 @@ infrastructure, and nothing depends on a hosted service.
 
 - **FastAPI** + **OpenAPI 3.1**, interactive reference rendered by **Scalar** at `/docs`
 - **Clean Architecture** (Uncle Bob): domain and use cases free of framework dependencies
-- Real engine (`laya` + torch, CPU or GPU) or a **deterministic mock** for development and CI
+- Always the real model (`laya` + torch on CUDA, Apple MPS or CPU), **checked at start-up**: if torch,
+  the GPU or the checkpoints cannot run, the server refuses to start and says why
+- **One-command setup** (`make setup`) that detects the GPU and installs the right torch build
 - Production-ready: bearer auth, size limits, concurrency control (503 + `Retry-After`),
   `/health` and `/ready` probes, Docker, Compose with automatic HTTPS (Caddy), systemd unit
 
@@ -18,13 +20,40 @@ infrastructure, and nothing depends on a hosted service.
 
 ## Quick start
 
+### Local, on your machine (NVIDIA GPU, Apple silicon or CPU)
+
+```bash
+make setup     # detect the hardware, install torch + laya-client, download and test the model
+make start     # API on http://127.0.0.1:8000, docs at /docs
+```
+
+`make setup` (`scripts/setup.sh`, Linux, WSL2 or macOS) does everything in one go:
+
+1. Detects an NVIDIA GPU with `nvidia-smi` and installs torch built for **CUDA 12.8** (`cu128`), which
+   RTX 50-series cards (Blackwell, `sm_120`) require. Apple silicon gets the MPS build; anything else the
+   CPU build.
+2. Creates `.venv` and installs `laya-client[engine]`.
+3. Writes `.env` with the detected `LAYA_DEVICE`.
+4. Runs `laya-client doctor --load`: downloads the checkpoints (1-2 GB the first time), loads them on the
+   device and runs a test prediction. If anything fails, the script stops with the reason.
+
+Override the choices with environment variables, for example `LAYA_DEVICE=cpu make setup` or
+`TORCH_CUDA=cu129 make setup`. `./scripts/setup.sh --dry-run` prints the plan without installing.
+Requires Python ≥ 3.10; [uv](https://docs.astral.sh/uv/) is used when installed.
+
 ### Docker (recommended for a VPS)
 
 ```bash
 cp .env.example .env              # set LAYA_API_KEY and LAYA_MODELS
-docker compose up -d --build      # API on http://127.0.0.1:8000, docs at /docs
+make up                           # CPU:  docker compose up -d --build
+make up-gpu                       # NVIDIA GPU (CUDA 12.8 build, RTX 50xx ready)
 docker compose logs -f            # the first start downloads the weights (~1-2 GB) into a volume
 ```
+
+The GPU variant needs the NVIDIA driver and the
+[NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/) (on Windows:
+Docker Desktop with the WSL2 backend). It sets `LAYA_REQUIRE_GPU=true`, so the container refuses to start
+if the model would end up on the CPU.
 
 With a domain and automatic HTTPS (Let's Encrypt via Caddy):
 
@@ -32,25 +61,43 @@ With a domain and automatic HTTPS (Let's Encrypt via Caddy):
 LAYA_DOMAIN=api.example.com docker compose --profile proxy up -d --build
 ```
 
-NVIDIA GPU:
+### Start-up checks: it runs the real model or it does not start
 
-```bash
-TORCH_INDEX_URL=https://download.pytorch.org/whl/cu124 \
-  docker compose -f compose.yaml -f compose.gpu.yaml up -d --build
+There is no mock or fallback engine. Before the server accepts a request it:
+
+1. checks that `laya` and `torch` are installed;
+2. resolves `LAYA_DEVICE` and, on a GPU, runs a CUDA kernel to prove this torch build supports the card;
+3. downloads (first run) and loads the checkpoints in `LAYA_MODELS`;
+4. verifies each checkpoint sits on the requested device (Laya can silently fall back to the CPU);
+5. runs a test prediction with each checkpoint.
+
+If any step fails, the process exits with a non-zero status and a message that says what to fix, for example:
+
+```
+CRITICAL laya_client: laya-client cannot start: torch 2.5.1+cu124 (CUDA 12.4 build) cannot run on
+NVIDIA GeForce RTX 5080 (sm_120): CUDA error: no kernel image is available for execution on the device.
+This build has kernels for: sm_50, ..., sm_90. RTX 50-series GPUs (Blackwell, sm_120) need a CUDA 12.8+
+build: pip install --index-url https://download.pytorch.org/whl/cu128 torch
 ```
 
-### Local (development)
+Run the same checks without starting the server:
 
 ```bash
-make install        # venv + dependencies (no torch)
-make dev            # auto-reloading server on the mock engine -> http://127.0.0.1:8000/docs
-make test           # full test suite
-
-make install-engine # add laya + CPU torch to run the real model
-make run            # uses the settings in .env
+laya-client doctor          # torch, GPU and device only (seconds)
+laya-client doctor --load   # also download, load and test the checkpoints
 ```
 
-Requires Python ≥ 3.10 and [uv](https://docs.astral.sh/uv/) (or `pip install -e ".[dev]"`).
+### Development
+
+```bash
+make install        # lint + test tooling only (no torch): enough for `make check`
+make check          # ruff + pytest
+make dev            # auto-reloading server (needs `make setup`; every reload loads the model again)
+```
+
+The unit and HTTP tests replace the engine with a test double through the composition root, so they run
+offline in under a second. The real model is tested end to end by the `e2e` CI job, which builds the
+Docker image, downloads the checkpoint and calls the API.
 
 ---
 
@@ -152,11 +199,10 @@ Everything is configured through `LAYA_*` environment variables (or a `.env` fil
 
 | Variable | Default | Description |
 |---|---|---|
-| `LAYA_ENGINE` | `laya` | `laya` (real model) or `mock` (deterministic answers, no model) |
 | `LAYA_API_KEY` | — | Comma-separated bearer tokens; when set, auth is required |
-| `LAYA_DEVICE` | auto | `cpu`, `cuda`, `mps` |
-| `LAYA_MODELS` | all | Checkpoints to preload |
-| `LAYA_PRELOAD` | `true` | Load in the background at startup (`/ready` turns 200 when done) |
+| `LAYA_DEVICE` | `auto` | `auto`, `cpu`, `cuda`, `cuda:<index>`, `mps`. `auto` refuses the CPU when an NVIDIA GPU is present but unusable |
+| `LAYA_REQUIRE_GPU` | `false` | Refuse to start unless the model runs on a GPU |
+| `LAYA_MODELS` | all | Checkpoints to load and test at start-up |
 | `LAYA_THREADS` | — | Torch threads on CPU (≤ physical cores) |
 | `LAYA_DEFAULT_MODEL` | `english` | Fallback when the text carries no language evidence |
 | `LAYA_JEV_STRICT` | `false` | Reply with the strict Jev contract only |
@@ -169,7 +215,7 @@ Everything is configured through `LAYA_*` environment variables (or a `.env` fil
 
 - **CPU**: 4 vCPU / 8 GB RAM serves `english` + `multilingual` (≈ 50–150 ms per short request).
   Set `LAYA_THREADS` to the number of physical cores.
-- **GPU**: ≈ 35 ms per request; use the CUDA image and `compose.gpu.yaml`.
+- **GPU**: ≈ 35 ms per request; use `make up-gpu` (CUDA 12.8 build; RTX 50-series need at least that).
 - One worker per process on purpose: each worker would load its own copy of the weights. For more
   throughput, scale horizontally (several instances behind the proxy).
 
@@ -183,10 +229,10 @@ Clean Architecture: dependencies point inward. Details in [`docs/ARCHITECTURE.md
 src/laya_client/
 ├── domain/           # Entities, errors, policies (limits) and ports. Pure Python.
 ├── application/      # Use cases: PredictDecision, PredictBatchDecision, PredictWithPreset ...
-├── infrastructure/   # Adapters: LayaRouterEngine, MockDecisionEngine, catalog, presets, settings
+├── infrastructure/   # Adapters: LayaRouterEngine, runtime checks, catalog, presets, settings
 ├── interfaces/http/  # FastAPI: routers, schemas (OpenAPI), presenters, auth, middleware, Scalar
 ├── container.py      # Composition root: the only place that knows the concrete classes
-└── main.py           # Entry point (uvicorn)
+└── main.py           # CLI: `laya-client` (serve) and `laya-client doctor`
 ```
 
 ## Contributing

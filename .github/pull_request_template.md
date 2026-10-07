@@ -25,4 +25,4 @@ Closes #
 
 ## How was this tested?
 
-<!-- Commands you ran, requests you sent, engine used (laya CPU/GPU or mock). -->
+<!-- Commands you ran, requests you sent, device used (CPU, CUDA GPU, MPS). -->
