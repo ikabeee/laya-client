@@ -1,45 +1,47 @@
-# Contribuir
+# Contributing
 
 ## Git flow
 
-| Rama | Propósito | Sale de | Se fusiona en |
+| Branch | Purpose | Branches from | Merges into |
 |---|---|---|---|
-| `main` | Lo que está en producción. Cada merge lleva un tag `vX.Y.Z` | — | — |
-| `develop` | Integración de la próxima versión | `main` | `release/*` |
-| `feature/<nombre>` | Una funcionalidad | `develop` | `develop` (PR) |
-| `release/<X.Y.Z>` | Estabilización: versión, changelog, fixes menores | `develop` | `main` + `develop` |
-| `hotfix/<X.Y.Z>` | Corrección urgente de producción | `main` | `main` + `develop` |
+| `main` | What runs in production. Every merge is tagged `vX.Y.Z` | — | — |
+| `develop` | Integration branch for the next release | `main` | `release/*` |
+| `feature/<name>` | One feature | `develop` | `develop` (via PR) |
+| `release/<X.Y.Z>` | Stabilization: version bump, changelog, small fixes | `develop` | `main` + `develop` |
+| `hotfix/<X.Y.Z>` | Urgent production fix | `main` | `main` + `develop` |
 
 ```bash
 git checkout develop && git pull
-git checkout -b feature/mi-cambio
+git checkout -b feature/my-change
 # ... commits ...
-git push -u origin feature/mi-cambio   # abrir PR contra develop
+git push -u origin feature/my-change   # open a PR against develop
 ```
 
-Para publicar: `release/X.Y.Z` desde `develop` → subir `version` en `pyproject.toml` y
-`src/laya_client/__init__.py` → PR a `main` → tag `vX.Y.Z` → merge de vuelta a `develop`.
+To release: branch `release/X.Y.Z` from `develop` → bump `version` in `pyproject.toml` and
+`src/laya_client/__init__.py` → PR into `main` → tag `vX.Y.Z` → merge back into `develop`.
 
 ## Commits
 
-[Conventional Commits](https://www.conventionalcommits.org/) con la capa como scope:
+[Conventional Commits](https://www.conventionalcommits.org/), with the layer as the scope:
 
 ```
 feat(api): add /v1/presets endpoints
 fix(domain): reject null score levels
 refactor(infrastructure): lazy-load torch in the Laya engine
 test(api): cover the admission limit
-docs: deployment guide for VPS
+docs: deployment guide for a VPS
 chore(deploy): add Caddy reverse proxy
 ```
 
-## Antes de abrir un PR
+## Before opening a PR
 
 ```bash
-make check      # ruff (lint + formato) y pytest
+make check      # ruff (lint + format) and pytest
 ```
 
-- Respeta la regla de dependencias (ver `docs/ARCHITECTURE.md`): `domain` no importa nada externo,
-  `application` sólo importa `domain`, y sólo `infrastructure` importa `laya`/torch.
-- Toda regla nueva lleva su test; todo endpoint nuevo, su test de integración.
-- Si cambias el contrato HTTP, revisa que `/docs` (Scalar) lo describa bien.
+- Respect the dependency rule (see `docs/ARCHITECTURE.md`): `domain` imports nothing external,
+  `application` imports only `domain`, and only `infrastructure` imports `laya`/torch.
+  `tests/unit/test_architecture.py` enforces this.
+- Every new rule comes with a test; every new endpoint, with an integration test.
+- If you change the HTTP contract, check that `/docs` (Scalar) still describes it accurately.
+- Write code, comments, docs, commits and PRs in English.

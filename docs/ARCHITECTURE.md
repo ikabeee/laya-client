@@ -1,91 +1,96 @@
-# Arquitectura
+# Architecture
 
-`laya-client` sigue la **Clean Architecture** de Robert C. Martin. La regla de dependencias es la única
-que no se negocia: **el código sólo depende de capas más internas**. El dominio no sabe que existe
-FastAPI, ni torch, ni Laya.
+`laya-client` follows Robert C. Martin's **Clean Architecture**. The dependency rule is the one rule
+that is not negotiable: **code only depends on layers further in**. The domain does not know that
+FastAPI, torch or Laya exist.
 
 ```
             ┌──────────────────────────────────────────────────────────┐
             │  interfaces/http  (FastAPI, Pydantic, Scalar)            │
             │   ┌──────────────────────────────────────────────────┐   │
-            │   │  application  (casos de uso)                     │   │
+            │   │  application  (use cases)                        │   │
             │   │   ┌──────────────────────────────────────────┐   │   │
-            │   │   │  domain  (entidades, políticas, puertos) │   │   │
+            │   │   │  domain  (entities, policies, ports)     │   │   │
             │   │   └──────────────────────────────────────────┘   │   │
             │   └──────────────────────────────────────────────────┘   │
             │  infrastructure  (Laya Router, mock, settings, presets)  │
             └──────────────────────────────────────────────────────────┘
-                     container.py  = composition root (cablea todo)
+                     container.py  = composition root (wires it all)
 ```
 
-## Capas
+`tests/unit/test_architecture.py` enforces the rule: it fails if `domain` imports anything outside the
+standard library, if `application` imports anything but `domain`, or if any layer other than
+`infrastructure` imports `laya`, `torch` or `transformers`.
+
+## Layers
 
 ### `domain/` — Enterprise Business Rules
 
-| Módulo | Contenido |
+| Module | Contents |
 |---|---|
-| `entities.py` | `Question`, `DecisionRequest`, `BatchDecisionRequest`, `Answer`, `Decision`, `Usage`, `ModelInfo`, `Preset`, `EngineStatus` (dataclasses inmutables) |
-| `policies.py` | `RequestLimits` y las reglas que toda petición cumple antes de inferir (tamaño del state, nº de preguntas/opciones, presupuesto de tokens, `min_confidence`) |
-| `errors.py` | Errores de negocio (`MissingStateError`, `PayloadTooLargeError`, `ModelNotFoundError`, `EngineBusyError`…) |
-| `ports.py` | Interfaces que implementa infraestructura: `DecisionEngine`, `ModelCatalog`, `PresetRepository` |
+| `entities.py` | `Question`, `DecisionRequest`, `BatchDecisionRequest`, `Answer`, `Decision`, `Usage`, `ModelInfo`, `Preset`, `EngineStatus` (immutable dataclasses) |
+| `policies.py` | `RequestLimits` and the rules every request must satisfy before inference (state size, number of questions/options, token budget, `min_confidence`) |
+| `errors.py` | Business errors (`MissingStateError`, `PayloadTooLargeError`, `ModelNotFoundError`, `EngineBusyError` ...) |
+| `ports.py` | Interfaces infrastructure implements: `DecisionEngine`, `ModelCatalog`, `PresetRepository` |
 
 ### `application/` — Application Business Rules
 
-Un caso de uso por cosa que se le puede pedir al servicio. Reciben sus puertos por constructor
-(inyección de dependencias) y no conocen HTTP:
+One use case per thing a caller can ask the service to do. Each receives its ports through its
+constructor (dependency injection) and knows nothing about HTTP:
 
-- `PredictDecision` / `PredictBatchDecision`: valida (políticas) → resuelve el modelo (catálogo) → motor
-- `PredictWithPreset`: coloca el texto en el campo que lee el preset y delega en `PredictDecision`
+- `PredictDecision` / `PredictBatchDecision`: validate (policies) → resolve the model (catalog) → engine
+- `PredictWithPreset`: places plain text in the field the preset reads and delegates to `PredictDecision`
 - `ListModels`, `ListPresets`, `GetPreset`, `GetHealth`
 
 ### `infrastructure/` — Frameworks & Drivers
 
-- `engines/laya_engine.py` — `LayaRouterEngine`: adaptador del puerto `DecisionEngine` a `laya.Router`.
-  Importa `laya`/torch de forma perezosa, serializa las pasadas con un lock (una a la vez es lo que una
-  CPU/GPU quiere), traduce `ValueError` de Laya a `InvalidRequestError` y oculta los fallos internos.
-- `engines/mock_engine.py` — `MockDecisionEngine`: respuestas deterministas con la forma exacta de Laya.
-- `catalog.py` — resolución de nombres de modelo idéntica a `laya-serve` (un id de Jev auto-enruta).
-- `presets.py` — los cinco presets de Laya como datos.
-- `config/settings.py` — `pydantic-settings`, prefijo `LAYA_`.
+- `engines/laya_engine.py` — `LayaRouterEngine`: adapter from the `DecisionEngine` port to `laya.Router`.
+  Imports `laya`/torch lazily, serializes forward passes with a lock (one at a time is what a CPU/GPU
+  wants), turns Laya's `ValueError` into `InvalidRequestError` and hides internal failures.
+- `engines/mock_engine.py` — `MockDecisionEngine`: deterministic answers with Laya's exact shape.
+- `catalog.py` — model-name resolution identical to `laya-serve` (a Jev model id auto-routes).
+- `presets.py` — Laya's five presets, as data.
+- `config/settings.py` — `pydantic-settings`, `LAYA_` prefix.
 
 ### `interfaces/http/` — Interface Adapters
 
-- `schemas/` — modelos Pydantic: el contrato wire y la fuente del documento OpenAPI.
-- `mappers.py` — schema → entidad. `presenters.py` — entidad → JSON (completo o Jev estricto).
-- `errors.py` — **único** lugar donde un error de dominio se convierte en código HTTP.
-- `security.py` — Bearer opcional, comparación en tiempo constante.
-- `dependencies.py` — acceso al contenedor y control de admisión (503 sin encolar).
-- `middleware.py` — límite de tamaño del cuerpo y `X-Request-ID`.
-- `docs.py` — referencia Scalar en `/docs` (telemetría desactivada).
+- `schemas/` — Pydantic models: the wire contract and the source of the OpenAPI document.
+- `mappers.py` — schema → entity. `presenters.py` — entity → JSON (full or strict Jev).
+- `errors.py` — the **only** place a domain error becomes an HTTP status code.
+- `security.py` — optional bearer auth, constant-time comparison.
+- `dependencies.py` — container access and admission control (503 instead of queueing).
+- `middleware.py` — request body size limit and `X-Request-ID`.
+- `docs.py` — Scalar reference at `/docs` (telemetry disabled).
 
-## Flujo de una petición
+## Request flow
 
 ```
 POST /v1/systemone
   → BodySizeLimitMiddleware / RequestIdMiddleware
-  → require_api_key → admit (503 si hay saturación)
+  → require_api_key → admit (503 when saturated)
   → SystemOneRequest (Pydantic)  → mappers.to_decision_request
-  → PredictDecision.execute      (thread pool: no bloquea el event loop)
+  → PredictDecision.execute      (thread pool: never blocks the event loop)
        → policies.validate_decision_request
        → ModelCatalog.resolve
        → DecisionEngine.predict  (LayaRouterEngine | MockDecisionEngine)
-  → presenters.decision_payload  (strict si LAYA_JEV_STRICT)
+  → presenters.decision_payload  (strict when LAYA_JEV_STRICT)
   → JSONResponse + X-Inference-Time-Ms / Server-Timing
 ```
 
-## Extender
+## Extending
 
-- **Otro motor** (p. ej. ONNX o un Laya remoto): implementa `DecisionEngine` en `infrastructure/engines/`
-  y elígelo en `container.build_engine`. Nada más cambia.
-- **Presets propios** (p. ej. en base de datos): implementa `PresetRepository` y cámbialo en `container.py`.
-- **Otra interfaz** (gRPC, CLI, cola): crea `interfaces/<nombre>/` que llame a los mismos casos de uso.
+- **Another engine** (e.g. ONNX, or a remote Laya): implement `DecisionEngine` in
+  `infrastructure/engines/` and select it in `container.build_engine`. Nothing else changes.
+- **Custom presets** (e.g. from a database): implement `PresetRepository` and swap it in `container.py`.
+- **Another interface** (gRPC, CLI, a queue consumer): add `interfaces/<name>/` calling the same use cases.
 
 ## Tests
 
-| Carpeta | Qué prueba |
+| Path | What it covers |
 |---|---|
-| `tests/unit/test_policies.py` | Reglas de dominio |
-| `tests/unit/test_use_cases.py` | Casos de uso con un motor doble (`RecordingEngine`) |
-| `tests/unit/test_engines.py` | Mock y adaptador de Laya contra un `Router` falso |
-| `tests/unit/test_presenters.py` | Payload completo vs. contrato Jev estricto |
-| `tests/integration/test_api.py` | HTTP de punta a punta: contrato, auth, límites, 503, OpenAPI, Scalar |
+| `tests/unit/test_architecture.py` | The dependency rule |
+| `tests/unit/test_policies.py` | Domain rules |
+| `tests/unit/test_use_cases.py` | Use cases against a test double (`RecordingEngine`) |
+| `tests/unit/test_engines.py` | The mock, and the Laya adapter against a fake `Router` |
+| `tests/unit/test_presenters.py` | Full payload vs. the strict Jev contract |
+| `tests/integration/test_api.py` | End-to-end HTTP: contract, auth, limits, 503, OpenAPI, Scalar |
