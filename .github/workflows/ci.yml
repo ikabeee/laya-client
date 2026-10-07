@@ -32,20 +32,63 @@ jobs:
       - name: Test
         run: .venv/bin/python -m pytest
 
-  docker:
+  e2e:
+    # The real model, end to end: build the production image, let it download and load the english
+    # checkpoint, and call the API. No test doubles.
     runs-on: ubuntu-latest
     needs: test
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
-      - name: Build mock image
-        run: docker build -t laya-client:mock --build-arg ENGINE=mock .
-      - name: Smoke test
+      - name: Build the CPU image
+        run: docker build -t laya-client:ci .
+      - name: Start the server with the real model
         run: |
-          docker run -d --name laya -p 8000:8000 laya-client:mock
-          for i in $(seq 1 30); do curl -fs localhost:8000/ready && break; sleep 1; done
-          curl -fs localhost:8000/v1/systemone -H 'content-type: application/json' -d '{
-            "state": "We were billed twice, refund please",
-            "questions": {"dept": {"type": "choice", "instructions": "Which team?",
-                                   "criteria": {"billing": "refunds", "tech": "bugs"}}}}'
-          curl -fs localhost:8000/docs > /dev/null
+          docker run -d --name laya -p 8000:8000 -v laya-models:/data \
+            -e LAYA_MODELS=english -e LAYA_DEVICE=cpu -e LAYA_THREADS=2 laya-client:ci
+          for i in $(seq 1 180); do
+            if curl -fs localhost:8000/ready > /dev/null; then echo "ready after ~$((i * 5))s"; exit 0; fi
+            if [ "$(docker inspect -f '{{.State.Running}}' laya)" != "true" ]; then
+              echo "::error::the server exited during start-up"; docker logs laya; exit 1
+            fi
+            sleep 5
+          done
+          echo "::error::the server was not ready after 15 minutes"; docker logs laya; exit 1
+      - name: Call the API
+        run: |
+          set -euo pipefail
+          response=$(curl -fsS localhost:8000/v1/systemone -H 'content-type: application/json' -d '{
+            "state": {"body": "We were billed twice for March. Please refund the duplicate charge today."},
+            "questions": {
+              "department": {"type": "choice", "instructions": "Which team should handle `body`?",
+                             "criteria": {"billing": "invoices, payments, refunds", "technical": "bugs, outages"}},
+              "urgency": {"type": "score", "instructions": "How urgent is `body`?",
+                          "criteria": ["not urgent", "soon", "blocking"]},
+              "refund": {"type": "noul", "instructions": "Does `body` ask for a refund?"}}}')
+          echo "$response" | jq .
+          echo "$response" | jq -e '.routing.repo == "convaiinnovations/laya"'
+          echo "$response" | jq -e '.answers.department.probabilities | add | . > 0.99 and . < 1.01'
+          echo "$response" | jq -e '.answers.refund.noul >= 0 and .answers.refund.noul <= 1'
+          echo "$response" | jq -e '.answers.urgency.legend | length == 3'
+          curl -fsS localhost:8000/v1/presets/triage -H 'content-type: application/json' \
+            -d '{"state": "My app crashes every time I open settings"}' | jq -e '.answers.intent.choice'
+          curl -fsS localhost:8000/v1/systemone/batch -H 'content-type: application/json' -d '{
+            "states": ["refund me", "the login page returns 500"],
+            "questions": {"q": {"type": "noul", "instructions": "Is this about money?"}}}' \
+            | jq -e '.results | length == 2'
+          curl -fsS localhost:8000/health | jq .
+      - name: Logs
+        if: always()
+        run: docker logs laya 2>&1 | tail -100
+      - name: A GPU that is not there stops the server instead of falling back
+        run: |
+          set -u
           docker rm -f laya
+          status=0
+          timeout 600 docker run --name laya-gpu -e LAYA_DEVICE=cuda -e LAYA_MODELS=english \
+            -v laya-models:/data laya-client:ci > gpu.log 2>&1 || status=$?
+          cat gpu.log
+          if [ "$status" -eq 0 ] || [ "$status" -eq 124 ]; then
+            echo "::error::expected a start-up failure, got exit status $status"; exit 1
+          fi
+          grep -q "cannot start" gpu.log

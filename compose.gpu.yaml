@@ -1,10 +1,20 @@
-# NVIDIA GPU override (needs the NVIDIA Container Toolkit on the host):
-#   TORCH_INDEX_URL=https://download.pytorch.org/whl/cu124 \
-#     docker compose -f compose.yaml -f compose.gpu.yaml up -d --build
+# NVIDIA GPU override. Needs the NVIDIA driver and the NVIDIA Container Toolkit on the host
+# (Docker Desktop with the WSL2 backend on Windows):
+#
+#   docker compose -f compose.yaml -f compose.gpu.yaml up -d --build      (or: make up-gpu)
+#
+# torch is built for CUDA 12.8 (cu128), the first build with kernels for RTX 50-series GPUs (Blackwell,
+# sm_120). Older cards work with it too. The container refuses to start if the model does not end up
+# running on the GPU.
 services:
   laya-client:
+    build:
+      args:
+        TORCH_INDEX_URL: ${TORCH_INDEX_URL:-https://download.pytorch.org/whl/cu128}
+    image: laya-client:${IMAGE_TAG:-gpu}
     environment:
-      LAYA_DEVICE: cuda
+      LAYA_DEVICE: ${LAYA_DEVICE:-cuda}
+      LAYA_REQUIRE_GPU: "true"
     deploy:
       resources:
         reservations:

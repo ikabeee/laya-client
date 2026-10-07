@@ -1,41 +1,44 @@
-.PHONY: install install-engine dev run test lint format check docker-build docker-build-mock up down logs
+.PHONY: setup start doctor dev install test lint format check docker-build docker-build-gpu up up-gpu down logs
 
-PY ?= .venv/bin/python
+setup:              ## detect the hardware, install torch + laya-client, download and test the model
+	./scripts/setup.sh
 
-install:            ## API, docs and test tooling (mock engine only)
-	uv venv .venv && uv pip install --python .venv -e ".[dev]"
+start:              ## start the server with the settings in .env (fails fast if the model cannot run)
+	.venv/bin/laya-client
 
-install-engine:     ## add the real Laya engine with CPU torch
-	uv pip install --python .venv --index-url https://download.pytorch.org/whl/cpu torch
-	uv pip install --python .venv -e ".[engine,dev]"
+doctor:             ## check torch, the GPU and the model without starting the server
+	.venv/bin/laya-client doctor --load
 
-dev:                ## hot-reload server on the mock engine
-	LAYA_ENGINE=mock $(PY) -m uvicorn laya_client.interfaces.http.app:create_app --factory --reload --port 8000
+dev:                ## auto-reloading server; every reload loads the model again
+	.venv/bin/python -m uvicorn laya_client.interfaces.http.app:create_app --factory --reload --port 8000
 
-run:                ## server with the settings from .env
-	$(PY) -m laya_client
+install:            ## test and lint tooling only (no torch, no model): enough for `make check`
+	uv venv --allow-existing .venv && uv pip install --python .venv -e ".[dev]"
 
 test:
-	$(PY) -m pytest
+	.venv/bin/python -m pytest
 
 lint:
-	$(PY) -m ruff check src tests
-	$(PY) -m ruff format --check src tests
+	.venv/bin/ruff check src tests
+	.venv/bin/ruff format --check src tests
 
 format:
-	$(PY) -m ruff check --fix src tests
-	$(PY) -m ruff format src tests
+	.venv/bin/ruff check --fix src tests
+	.venv/bin/ruff format src tests
 
 check: lint test
 
-docker-build:
+docker-build:       ## CPU image
 	docker build -t laya-client .
 
-docker-build-mock:
-	docker build -t laya-client:mock --build-arg ENGINE=mock .
+docker-build-gpu:   ## NVIDIA image (CUDA 12.8 build of torch: RTX 50-series ready)
+	docker build -t laya-client:gpu --build-arg TORCH_INDEX_URL=https://download.pytorch.org/whl/cu128 .
 
-up:
+up:                 ## run on the CPU with Docker Compose
 	docker compose up -d --build
+
+up-gpu:             ## run on an NVIDIA GPU with Docker Compose
+	docker compose -f compose.yaml -f compose.gpu.yaml up -d --build
 
 down:
 	docker compose down
