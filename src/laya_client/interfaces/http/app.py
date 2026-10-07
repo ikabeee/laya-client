@@ -60,6 +60,7 @@ def create_app(settings: Settings | None = None, container: Container | None = N
         docs_url=None,
         redoc_url=None,
         openapi_url="/openapi.json" if settings.docs_enabled else None,
+        license_info={"name": "MIT", "identifier": "MIT"},
     )
     app.state.container = container
     app.state.admission = Admission(settings.max_concurrent)

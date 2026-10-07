@@ -1,7 +1,8 @@
 """Built-in question presets.
 
-The question sets are Laya's own (``laya/presets.py``, Apache-2.0, Convai Innovations), kept here as
-data so presets are served the same way with or without the ``laya`` package installed.
+The question sets are Laya's own (``laya/presets.py``, Convai Innovations), kept here as data so
+presets are served the same way with or without the ``laya`` package installed. They are redistributed
+under the Apache License 2.0 they were published with: https://www.apache.org/licenses/LICENSE-2.0
 """
 
 from __future__ import annotations

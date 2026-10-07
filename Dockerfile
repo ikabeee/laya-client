@@ -16,7 +16,7 @@ ENV PIP_NO_CACHE_DIR=1 PIP_DISABLE_PIP_VERSION_CHECK=1
 RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 WORKDIR /build
-COPY pyproject.toml README.md ./
+COPY pyproject.toml README.md LICENSE ./
 COPY src ./src
 # torch first, from the index that matches the target hardware, so `laya` does not pull the
 # multi-gigabyte CUDA wheel onto a CPU-only VPS.
