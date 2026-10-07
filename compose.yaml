@@ -1,0 +1,50 @@
+# docker compose up -d                        -> API on http://127.0.0.1:8000 (docs at /docs)
+# docker compose --profile proxy up -d        -> plus Caddy with automatic HTTPS (set LAYA_DOMAIN)
+services:
+  laya-client:
+    build:
+      context: .
+      args:
+        ENGINE: ${ENGINE:-laya}
+        TORCH_INDEX_URL: ${TORCH_INDEX_URL:-https://download.pytorch.org/whl/cpu}
+    image: laya-client:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    ports:
+      # Bound to localhost: put a reverse proxy (the `proxy` profile below, nginx ...) in front.
+      # Use "8000:8000" to expose it directly, and then do set LAYA_API_KEY.
+      - "${LAYA_BIND:-127.0.0.1}:${LAYA_PORT:-8000}:8000"
+    environment:
+      LAYA_PORT: "8000"
+    volumes:
+      # Model weights are downloaded once and survive container rebuilds.
+      - laya-models:/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=4)"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+
+  caddy:
+    profiles: ["proxy"]
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - laya-client
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      LAYA_DOMAIN: ${LAYA_DOMAIN:-localhost}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  laya-models:
+  caddy-data:
+  caddy-config:
